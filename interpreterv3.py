@@ -11,7 +11,6 @@ class ExecStatus(Enum):
     CONTINUE = 1
     RETURN = 2
 
-
 # Main interpreter class
 class Interpreter(InterpreterBase):
     # constants
@@ -57,6 +56,8 @@ class Interpreter(InterpreterBase):
 
     def __run_statements(self, statements):
         self.env.push()
+        
+        
         for statement in statements:
             if self.trace_output:
                 print(statement)
@@ -70,16 +71,19 @@ class Interpreter(InterpreterBase):
             elif statement.elem_type == Interpreter.IF_DEF:
                 status, return_val = self.__do_if(statement)
             elif statement.elem_type == Interpreter.WHILE_DEF:
-                status, return_val = self.__do_while(statement)
-
+                status, return_val = self.__do_while(statement)            
             if status == ExecStatus.RETURN:
                 self.env.pop()
                 return (status, return_val)
-
+            
         self.env.pop()
+        
+        
         return (ExecStatus.CONTINUE, Interpreter.NIL_VALUE)
 
     def __call_func(self, call_node):
+        ref_variables = {}
+
         func_name = call_node.get("name")
         if func_name == "print":
             return self.__call_print(call_node)
@@ -91,24 +95,50 @@ class Interpreter(InterpreterBase):
         actual_args = call_node.get("args")
         func_ast = self.__get_func_by_name(func_name, len(actual_args))
         formal_args = func_ast.get("args")
+
         if len(actual_args) != len(formal_args):
             super().error(
                 ErrorType.NAME_ERROR,
                 f"Function {func_ast.get('name')} with {len(actual_args)} args not found",
             )
         self.env.push()
+        
         for formal_ast, actual_ast in zip(formal_args, actual_args):
-            result = copy.deepcopy(self.__eval_expr(actual_ast))
+            result = self.__eval_expr(actual_ast)
             arg_name = formal_ast.get("name")
-            self.env.create(arg_name, result)
+            
+            #PASS BY REF
+            if formal_ast.elem_type == "refarg" and actual_ast.elem_type == Interpreter.VAR_DEF:
+                act_arg_name = actual_ast.get("name")
+                ref_variables[act_arg_name]= arg_name                  
+                
+            #PASS BY VAL
+            else:
+                result = copy.deepcopy(result)
+            
+            self.env.create(arg_name, result)    
+                
+        
+        
+        
         _, return_val = self.__run_statements(func_ast.get("statements"))
+
+        
+        vals = {}
+        for key in ref_variables:
+            vals[key] = self.env.get(ref_variables[key])
+        
+        
         self.env.pop()
+        for a in vals:
+            self.env.set(a, vals[a])
+        
         return return_val
 
     def __call_print(self, call_ast):
         output = ""
         for arg in call_ast.get("args"):
-            result = self.__eval_expr(arg)  # result is a Value object
+            result = self.__eval_expr(arg)
             output = output + get_printable(result)
         super().output(output)
         return Interpreter.NIL_VALUE
@@ -163,7 +193,22 @@ class Interpreter(InterpreterBase):
 
     def __eval_op(self, arith_ast):
         left_value_obj = self.__eval_expr(arith_ast.get("op1"))
-        right_value_obj = self.__eval_expr(arith_ast.get("op2"))
+        right_value_obj = self.__eval_expr(arith_ast.get("op2"))        
+        if arith_ast.elem_type == "==" or arith_ast.elem_type == "!=" or arith_ast.elem_type == "&&" or arith_ast.elem_type == "||":
+            print("YUP1")
+            if right_value_obj.type() == Type.INT:
+                right_value_obj = Value(Type.BOOL, bool(right_value_obj.value()))
+            elif left_value_obj.type() == Type.INT:
+                left_value_obj = Value(Type.BOOL, bool(right_value_obj.value()))
+        
+        if arith_ast.elem_type == "+" or arith_ast.elem_type == "-" or arith_ast.elem_type == "/" or arith_ast.elem_type == "*":
+            
+            if left_value_obj.type() == Type.BOOL:
+                left_value_obj = Value(Type.INT, 1 if left_value_obj.value() else 0)
+            if right_value_obj.type() == Type.BOOL:
+                right_value_obj = Value(Type.INT, 1 if right_value_obj.value() else 0)
+
+        
         if not self.__compatible_types(
             arith_ast.elem_type, left_value_obj, right_value_obj
         ):
@@ -176,11 +221,9 @@ class Interpreter(InterpreterBase):
                 ErrorType.TYPE_ERROR,
                 f"Incompatible operator {arith_ast.elem_type} for type {left_value_obj.type()}",
             )
+            
         f = self.op_to_lambda[left_value_obj.type()][arith_ast.elem_type]
-        # print("here eval")
-        # print(arith_ast)
-        # print("evaluating " + str(left_value_obj.type()) + " " + str(arith_ast.elem_type))
-        # print("obj left: " + str(left_value_obj.value()))
+                
         return f(left_value_obj, right_value_obj)
 
     def __compatible_types(self, oper, obj1, obj2):
@@ -191,6 +234,10 @@ class Interpreter(InterpreterBase):
 
     def __eval_unary(self, arith_ast, t, f):
         value_obj = self.__eval_expr(arith_ast.get("op1"))
+        
+        if value_obj.type() == Type.INT:
+            value_obj = Value(Type.BOOL, bool(value_obj.value()))
+                
         if value_obj.type() != t:
             super().error(
                 ErrorType.TYPE_ERROR,
@@ -270,6 +317,15 @@ class Interpreter(InterpreterBase):
     def __do_if(self, if_ast):
         cond_ast = if_ast.get("condition")
         result = self.__eval_expr(cond_ast)
+        
+        if result.type()==Type.INT:
+            if result.value() == 0:
+                val = False
+            else:
+                val = True
+            result = Value(Type.BOOL,val)
+        
+        
         if result.type() != Type.BOOL:
             super().error(
                 ErrorType.TYPE_ERROR,
@@ -292,6 +348,14 @@ class Interpreter(InterpreterBase):
         run_while = Interpreter.TRUE_VALUE
         while run_while.value():
             run_while = self.__eval_expr(cond_ast)
+            
+            if run_while.type()==Type.INT:
+                if run_while.value() == 0:
+                    val = False
+                else:
+                    val = True
+                run_while = Value(Type.BOOL,val)
+        
             if run_while.type() != Type.BOOL:
                 super().error(
                     ErrorType.TYPE_ERROR,
@@ -310,4 +374,25 @@ class Interpreter(InterpreterBase):
         if expr_ast is None:
             return (ExecStatus.RETURN, Interpreter.NIL_VALUE)
         value_obj = copy.deepcopy(self.__eval_expr(expr_ast))
-        return (ExecStatus.RETURN, value_obj)
+        return (ExecStatus.RETURN, copy.deepcopy(value_obj))
+
+
+
+
+if __name__ == '__main__':
+    interpreter = Interpreter()
+    program = """
+    func foo(ref x, delta) { /* x passed by reference, delta passed by value */
+        x = x + delta;
+        delta = 0;
+    }
+
+    func main() {
+        a = 10;
+        delta = 1;
+        foo(a, delta);
+        print(a);     /* prints 11 */
+        print(delta); /* prints 1 */
+    }
+    """
+    interpreter.run(program)

@@ -33,3 +33,26 @@ class EnvironmentManager:
     # used when we exit a nested block to discard the environment for that block
     def pop(self):
         self.environment.pop()
+        
+        
+    def contains(self, symbol):
+        return symbol in self.environment[-1]   
+
+    def __repr__(self):
+        current_env = self.environment[-1]
+        result = "---- Current Environment ----\n"
+        for symbol, value in current_env.items():
+            result += f"{symbol}: {value}\n"
+        result += "\n---------------------------\n"
+        return result
+    
+    
+    
+    def printall(self):
+        result = ""
+        for index, env in enumerate(self.environment):
+            result += "---- New Environment ----\n"
+            result += f"Environment {index}:\n"
+            for symbol, value in env.items():
+                result += f"  {symbol}: {value}\n"
+        return result

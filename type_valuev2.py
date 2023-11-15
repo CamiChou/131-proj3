@@ -22,6 +22,8 @@ class Value:
     def type(self):
         return self.t
 
+    def __repr__(self):
+        return f"{self.t}: {self.v}"
 
 def create_value(val):
     if val == InterpreterBase.TRUE_DEF:
@@ -48,3 +50,4 @@ def get_printable(val):
             return "true"
         return "false"
     return None
+
