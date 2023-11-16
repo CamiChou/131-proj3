@@ -55,9 +55,7 @@ class Interpreter(InterpreterBase):
         return candidate_funcs[num_params]
 
     def __run_statements(self, statements):
-        self.env.push()
-        
-        
+        self.env.push()        
         for statement in statements:
             if self.trace_output:
                 print(statement)
@@ -118,17 +116,12 @@ class Interpreter(InterpreterBase):
             
             self.env.create(arg_name, result)    
                 
-        
-        
-        
         _, return_val = self.__run_statements(func_ast.get("statements"))
 
-        
         vals = {}
         for key in ref_variables:
             vals[key] = self.env.get(ref_variables[key])
-        
-        
+                
         self.env.pop()
         for a in vals:
             self.env.set(a, vals[a])
@@ -179,7 +172,12 @@ class Interpreter(InterpreterBase):
         if expr_ast.elem_type == InterpreterBase.VAR_DEF:
             var_name = expr_ast.get("name")
             val = self.env.get(var_name)
-            if val is None:
+            
+            if val is None and var_name in self.func_name_to_ast and len(list(self.func_name_to_ast[var_name].keys())): # CHECK LAST 
+                arg_amt = list(self.func_name_to_ast[var_name].keys())[0]
+                val = Value(Type.FUNC, self.func_name_to_ast[var_name][arg_amt])
+            
+            elif val is None:
                 super().error(ErrorType.NAME_ERROR, f"Variable {var_name} not found")
             return val
         if expr_ast.elem_type == InterpreterBase.FCALL_DEF:
@@ -195,7 +193,6 @@ class Interpreter(InterpreterBase):
         left_value_obj = self.__eval_expr(arith_ast.get("op1"))
         right_value_obj = self.__eval_expr(arith_ast.get("op2"))        
         if arith_ast.elem_type == "==" or arith_ast.elem_type == "!=" or arith_ast.elem_type == "&&" or arith_ast.elem_type == "||":
-            print("YUP1")
             if right_value_obj.type() == Type.INT:
                 right_value_obj = Value(Type.BOOL, bool(right_value_obj.value()))
             elif left_value_obj.type() == Type.INT:
@@ -313,6 +310,18 @@ class Interpreter(InterpreterBase):
         self.op_to_lambda[Type.NIL]["!="] = lambda x, y: Value(
             Type.BOOL, x.type() != y.type() or x.value() != y.value()
         )
+        
+        self.op_to_lambda[Type.FUNC] = {}
+        self.op_to_lambda[Type.FUNC]['=='] = lambda x, y: Value(
+            Type.BOOL, id(x.value()) == id(y.value())    
+        )
+        self.op_to_lambda[Type.FUNC]['!='] = lambda x, y: Value(
+            Type.BOOL, id(x.value()) != id(y.value())    
+        )
+        
+        
+        
+        
 
     def __do_if(self, if_ast):
         cond_ast = if_ast.get("condition")
@@ -382,17 +391,18 @@ class Interpreter(InterpreterBase):
 if __name__ == '__main__':
     interpreter = Interpreter()
     program = """
-    func foo(ref x, delta) { /* x passed by reference, delta passed by value */
-        x = x + delta;
-        delta = 0;
+    func foo() {
+    print("hello world!");
     }
 
     func main() {
-        a = 10;
-        delta = 1;
-        foo(a, delta);
-        print(a);     /* prints 11 */
-        print(delta); /* prints 1 */
+    if (foo == main) { print("wait what?"); }
+    x = foo;
+    if (x == foo) { print("yup"); }
+    y = main;
+    if (x != y) { print("that's better!"); }
+    if (x != 5) { print("that's good too"); }
+    if (x != nil) { print("it's not nil"); }
     }
     """
     interpreter.run(program)
